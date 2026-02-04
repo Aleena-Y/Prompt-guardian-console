@@ -1,16 +1,17 @@
+import { useState, useEffect } from 'react';
 import { 
-  Search, 
   Sparkles, 
   FileSearch, 
   TrendingUp,
   ShieldCheck,
   ShieldAlert,
   ShieldX,
-  Activity
+  Activity,
+  RefreshCw
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { mockPromptLogs, mockMetrics } from '@/data/mockData';
-import type { RiskLevel } from '@/types/dashboard';
+import indexedDBService, { type StoredPromptLog } from '@/services/indexedDBService';
+import { Button } from '@/components/ui/button';
 import { 
   PieChart, 
   Pie, 
@@ -32,26 +33,111 @@ const riskConfig = {
 const COLORS = ['hsl(160, 84%, 40%)', 'hsl(38, 92%, 50%)', 'hsl(0, 72%, 51%)'];
 
 export function DetectionAnalysis() {
-  // Calculate stats from mock data
+  const [logs, setLogs] = useState<StoredPromptLog[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [stats, setStats] = useState({ total: 0, safe: 0, suspicious: 0, malicious: 0 });
+
+  useEffect(() => {
+    initializeAndLoadLogs();
+  }, []);
+
+  const initializeAndLoadLogs = async () => {
+    try {
+      await indexedDBService.init();
+      await loadLogs();
+    } catch (error) {
+      console.error('Failed to load logs:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const loadLogs = async () => {
+    try {
+      const fetchedLogs = await indexedDBService.getPromptLogs();
+      setLogs(fetchedLogs);
+      
+      // Calculate statistics
+      const statistics = await indexedDBService.getStatistics();
+      setStats(statistics);
+    } catch (error) {
+      console.error('Failed to load logs:', error);
+    }
+  };
+
+  // Calculate stats from loaded logs
   const riskDistribution = [
-    { name: 'Safe', value: mockPromptLogs.filter(l => l.riskLevel === 'safe').length },
-    { name: 'Suspicious', value: mockPromptLogs.filter(l => l.riskLevel === 'suspicious').length },
-    { name: 'Malicious', value: mockPromptLogs.filter(l => l.riskLevel === 'malicious').length },
+    { name: 'Safe', value: stats.safe },
+    { name: 'Suspicious', value: stats.suspicious },
+    { name: 'Malicious', value: stats.malicious },
   ];
 
-  const patternData = mockMetrics.attackTypeDistribution.map(item => ({
-    pattern: item.type.split(' ')[0],
-    count: item.count,
-    fullMark: 150
-  }));
+  // Calculate attack pattern distribution from detected patterns
+  const patternMap = new Map<string, number>();
+  logs.forEach(log => {
+    log.detectedPatterns.forEach(pattern => {
+      patternMap.set(pattern, (patternMap.get(pattern) || 0) + 1);
+    });
+  });
 
-  const recentBlocked = mockPromptLogs.filter(l => l.action === 'blocked').slice(0, 3);
+  const patternData = Array.from(patternMap).map(([pattern, count]) => ({
+    pattern: pattern.split(' ')[0],
+    count,
+    fullMark: Math.max(10, Math.max(...Array.from(patternMap.values())))
+  })).slice(0, 5);
+
+  const recentBlocked = logs.filter(l => l.defenseAction === 'blocked').slice(0, 3);
+
+  if (loading) {
+    return (
+      <div className="h-full animate-fade-in">
+        <div className="flex items-center justify-center h-96">
+          <div className="text-center">
+            <RefreshCw className="w-8 h-8 text-muted-foreground animate-spin mx-auto mb-2" />
+            <p className="text-sm text-muted-foreground">Loading analysis data...</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (logs.length === 0) {
+    return (
+      <div className="h-full animate-fade-in">
+        <div className="mb-6">
+          <h1 className="text-2xl font-semibold text-foreground mb-1">Detection Analysis</h1>
+          <p className="text-muted-foreground">Deep dive into threat detection patterns and model performance</p>
+        </div>
+        <div className="flex items-center justify-center h-96">
+          <div className="text-center">
+            <FileSearch className="w-12 h-12 text-muted-foreground mx-auto mb-3" />
+            <p className="text-sm text-foreground mb-1">No data to analyze</p>
+            <p className="text-xs text-muted-foreground">Analyze prompts to see detection insights</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="h-full animate-fade-in">
       <div className="mb-6">
-        <h1 className="text-2xl font-semibold text-foreground mb-1">Detection Analysis</h1>
-        <p className="text-muted-foreground">Deep dive into threat detection patterns and model performance</p>
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-semibold text-foreground mb-1">Detection Analysis</h1>
+            <p className="text-muted-foreground">Deep dive into threat detection patterns and model performance</p>
+          </div>
+          <Button
+            onClick={loadLogs}
+            variant="outline"
+            size="sm"
+            className="gap-2"
+            disabled={loading}
+          >
+            <RefreshCw className={cn("w-4 h-4", loading && "animate-spin")} />
+            Refresh
+          </Button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -105,29 +191,35 @@ export function DetectionAnalysis() {
             Attack Pattern Analysis
           </h2>
 
-          <div className="h-64">
-            <ResponsiveContainer width="100%" height="100%">
-              <RadarChart cx="50%" cy="50%" outerRadius="70%" data={patternData}>
-                <PolarGrid stroke="hsl(220, 25%, 20%)" />
-                <PolarAngleAxis 
-                  dataKey="pattern" 
-                  tick={{ fill: 'hsl(215, 20%, 55%)', fontSize: 10 }}
-                />
-                <PolarRadiusAxis 
-                  angle={30} 
-                  domain={[0, 150]}
-                  tick={{ fill: 'hsl(215, 20%, 55%)', fontSize: 10 }}
-                />
-                <Radar
-                  name="Attacks"
-                  dataKey="count"
-                  stroke="hsl(185, 100%, 50%)"
-                  fill="hsl(185, 100%, 50%)"
-                  fillOpacity={0.3}
-                />
-              </RadarChart>
-            </ResponsiveContainer>
-          </div>
+          {patternData.length > 0 ? (
+            <div className="h-64">
+              <ResponsiveContainer width="100%" height="100%">
+                <RadarChart cx="50%" cy="50%" outerRadius="70%" data={patternData}>
+                  <PolarGrid stroke="hsl(220, 25%, 20%)" />
+                  <PolarAngleAxis 
+                    dataKey="pattern" 
+                    tick={{ fill: 'hsl(215, 20%, 55%)', fontSize: 10 }}
+                  />
+                  <PolarRadiusAxis 
+                    angle={30} 
+                    domain={[0, 150]}
+                    tick={{ fill: 'hsl(215, 20%, 55%)', fontSize: 10 }}
+                  />
+                  <Radar
+                    name="Attacks"
+                    dataKey="count"
+                    stroke="hsl(185, 100%, 50%)"
+                    fill="hsl(185, 100%, 50%)"
+                    fillOpacity={0.3}
+                  />
+                </RadarChart>
+              </ResponsiveContainer>
+            </div>
+          ) : (
+            <div className="h-64 flex items-center justify-center text-muted-foreground text-sm">
+              No pattern data available
+            </div>
+          )}
         </div>
 
         {/* Detection Stats */}
@@ -193,40 +285,46 @@ export function DetectionAnalysis() {
             Recent Blocked Attacks
           </h2>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {recentBlocked.map((log) => {
-              const risk = riskConfig[log.riskLevel];
-              const RiskIcon = risk.icon;
-              
-              return (
-                <div 
-                  key={log.id}
-                  className="p-4 rounded-lg bg-destructive/5 border border-destructive/20"
-                >
-                  <div className="flex items-center gap-2 mb-3">
-                    <RiskIcon className="w-4 h-4 text-destructive" />
-                    <span className="text-xs text-destructive font-medium uppercase">Blocked</span>
-                    <span className="ml-auto text-xs text-muted-foreground font-mono">
-                      {log.confidence}%
-                    </span>
-                  </div>
-                  <p className="text-sm font-mono text-foreground line-clamp-2 mb-3">
-                    {log.promptSnippet}
-                  </p>
-                  <div className="flex flex-wrap gap-1">
-                    {log.analysisResult.detectedPatterns.slice(0, 2).map((pattern) => (
-                      <span 
-                        key={pattern.id}
-                        className="px-2 py-0.5 rounded text-xs bg-background border border-border text-muted-foreground"
-                      >
-                        {pattern.name}
+          {recentBlocked.length > 0 ? (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {recentBlocked.map((log) => {
+                const risk = riskConfig[log.riskLevel];
+                const RiskIcon = risk.icon;
+                
+                return (
+                  <div 
+                    key={log.id}
+                    className="p-4 rounded-lg bg-destructive/5 border border-destructive/20"
+                  >
+                    <div className="flex items-center gap-2 mb-3">
+                      <RiskIcon className="w-4 h-4 text-destructive" />
+                      <span className="text-xs text-destructive font-medium uppercase">Blocked</span>
+                      <span className="ml-auto text-xs text-muted-foreground font-mono">
+                        {log.confidence}%
                       </span>
-                    ))}
+                    </div>
+                    <p className="text-sm font-mono text-foreground line-clamp-2 mb-3">
+                      {log.prompt}
+                    </p>
+                    <div className="flex flex-wrap gap-1">
+                      {log.detectedPatterns.slice(0, 2).map((pattern, i) => (
+                        <span 
+                          key={i}
+                          className="px-2 py-0.5 rounded text-xs bg-background border border-border text-muted-foreground"
+                        >
+                          {pattern}
+                        </span>
+                      ))}
+                    </div>
                   </div>
-                </div>
-              );
-            })}
-          </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="text-center py-8 text-muted-foreground text-sm">
+              No blocked attacks to display
+            </div>
+          )}
         </div>
       </div>
     </div>
