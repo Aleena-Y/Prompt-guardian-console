@@ -47,52 +47,38 @@ Start the development server:
 npm run dev
 ```
 
-The application will be available at `http://localhost:8080`
+**Edit a file directly in GitHub**
 
-## Building for Production
+- Navigate to the desired file(s).
+- Click the "Edit" button (pencil icon) at the top right of the file view.
+- Make your changes and commit the changes.
 
-Create an optimized production build:
+**Use GitHub Codespaces**
 
-```bash
-npm run build
-```
+- Navigate to the main page of your repository.
+- Click on the "Code" button (green button) near the top right.
+- Select the "Codespaces" tab.
+- Click on "New codespace" to launch a new Codespace environment.
+- Edit files directly within the Codespace and commit and push your changes once you're done.
 
-Preview the production build locally:
+## What technologies are used for this project?
 
-```bash
-npm run preview
-```
+This project is built with:
 
-## Project Structure
+- Vite
+- TypeScript
+- React
+- shadcn-ui
+- Tailwind CSS
 
-```
-src/
-├── components/
-│   ├── layout/          # Layout components
-│   └── ui/              # Reusable UI components
-├── pages/               # Page components
-│   ├── PromptPlayground.tsx
-│   ├── DetectionAnalysis.tsx
-│   ├── PromptLogs.tsx
-│   ├── MonitoringDashboard.tsx
-│   ├── SecurityPolicies.tsx
-│   └── NotFound.tsx
-├── App.tsx              # Main application component
-└── main.tsx             # Application entry point
-```
+## How can I deploy this project?
 
-## Available Routes
+Simply open [Lovable](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and click on Share -> Publish.
 
-- `/` - Prompt Playground
-- `/analysis` - Detection Analysis
-- `/logs` - Prompt Logs
-- `/monitoring` - Monitoring Dashboard
-- `/policies` - Security Policies
+## Can I connect a custom domain to my Lovable project?
 
-## License
+Yes, you can!
 
-[Your License Here]
+To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
 
-## Contributing
-
-[Contributing Guidelines]
+Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/custom-domain#custom-domain)

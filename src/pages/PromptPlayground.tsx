@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { 
   Send, 
   Zap, 
@@ -11,13 +11,19 @@ import {
   Database,
   ChevronDown,
   ChevronUp,
-  Sparkles
+  Sparkles,
+  Wifi,
+  WifiOff,
+  Save
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import type { AnalysisResult, RiskLevel } from '@/types/dashboard';
 import { simulateAnalysis } from '@/data/mockData';
+import { OllamaService } from '@/services/ollamaService';
+import indexedDBService from '@/services/indexedDBService';
+import { useToast } from '@/hooks/use-toast';
 
 const riskConfig = {
   safe: {
@@ -66,19 +72,107 @@ export function PromptPlayground() {
   const [analysis, setAnalysis] = useState<AnalysisResult | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [showOriginal, setShowOriginal] = useState(false);
+  const [useOllama, setUseOllama] = useState(true);
+  const [ollamaConnected, setOllamaConnected] = useState(false);
+  const { toast } = useToast();
 
   const charCount = prompt.length;
   const tokenCount = useMemo(() => Math.ceil(prompt.split(/\s+/).filter(Boolean).length * 1.3), [prompt]);
+
+  useEffect(() => {
+    checkOllamaConnection();
+    initializeDB();
+  }, []);
+
+  const initializeDB = async () => {
+    try {
+      await indexedDBService.init();
+      console.log('IndexedDB initialized');
+    } catch (error) {
+      console.error('Failed to initialize IndexedDB:', error);
+      toast({
+        title: 'Storage Warning',
+        description: 'Local storage initialization failed. Logs may not be saved.',
+        variant: 'destructive',
+      });
+    }
+  };
+
+  const checkOllamaConnection = async () => {
+    const connected = await OllamaService.testConnection();
+    setOllamaConnected(connected);
+    if (!connected && useOllama) {
+      toast({
+        title: 'Ollama not connected',
+        description: 'Make sure Ollama is running on localhost:11434. Falling back to mock analysis.',
+        variant: 'destructive',
+      });
+    }
+  };
 
   const handleSubmit = async () => {
     if (!prompt.trim()) return;
     
     setIsAnalyzing(true);
-    // Simulate API call
-    await new Promise(resolve => setTimeout(resolve, 800));
-    const result = simulateAnalysis(prompt, attackMode);
-    setAnalysis(result);
-    setIsAnalyzing(false);
+    
+    try {
+      let result: AnalysisResult;
+      let analysisMethod: 'ollama' | 'mock' = 'mock';
+      
+      if (useOllama && ollamaConnected) {
+        // Use Ollama for real analysis
+        result = await OllamaService.analyzePrompt(prompt);
+        analysisMethod = 'ollama';
+        toast({
+          title: 'Analysis Complete',
+          description: 'Prompt analyzed using Ollama Gemma 3:1b',
+        });
+      } else {
+        // Fallback to mock analysis
+        await new Promise(resolve => setTimeout(resolve, 800));
+        result = simulateAnalysis(prompt, attackMode);
+        if (useOllama && !ollamaConnected) {
+          toast({
+            title: 'Using Mock Analysis',
+            description: 'Ollama is not available. Using simulated results.',
+            variant: 'default',
+          });
+        }
+      }
+      
+      setAnalysis(result);
+
+      // Save to IndexedDB
+      try {
+        const logId = await indexedDBService.savePromptLog(result, prompt, analysisMethod);
+        console.log('Log saved with ID:', logId);
+        toast({
+          title: 'Saved to Storage',
+          description: 'Analysis has been logged successfully',
+        });
+      } catch (dbError) {
+        console.error('Failed to save to IndexedDB:', dbError);
+        toast({
+          title: 'Storage Error',
+          description: 'Analysis completed but failed to save locally',
+          variant: 'destructive',
+        });
+      }
+    } catch (error) {
+      console.error('Analysis failed:', error);
+      toast({
+        title: 'Analysis Failed',
+        description: 'Falling back to mock analysis',
+        variant: 'destructive',
+      });
+      
+      // Fallback to mock analysis on error
+      await new Promise(resolve => setTimeout(resolve, 800));
+      const result = simulateAnalysis(prompt, attackMode);
+      setAnalysis(result);
+    } finally {
+      setIsAnalyzing(false);
+    }
   };
 
   const risk = analysis ? riskConfig[analysis.riskLevel] : null;
@@ -126,17 +220,38 @@ export function PromptPlayground() {
               <span>~{tokenCount} tokens</span>
             </div>
 
-            {/* Attack Mode Toggle */}
+            {/* Ollama Toggle */}
             <div className="flex items-center justify-between mt-4 p-3 rounded-lg bg-background border border-border">
               <div className="flex items-center gap-2">
-                <AlertTriangle className="w-4 h-4 text-warning" />
-                <span className="text-sm text-foreground">Simulate Attack Mode</span>
+                {ollamaConnected ? (
+                  <Wifi className="w-4 h-4 text-success" />
+                ) : (
+                  <WifiOff className="w-4 h-4 text-muted-foreground" />
+                )}
+                <span className="text-sm text-foreground">Use Ollama Analysis</span>
+                {ollamaConnected && (
+                  <span className="text-xs text-success">(Connected)</span>
+                )}
               </div>
               <Switch
-                checked={attackMode}
-                onCheckedChange={setAttackMode}
+                checked={useOllama}
+                onCheckedChange={setUseOllama}
               />
             </div>
+
+            {/* Attack Mode Toggle */}
+            {!useOllama && (
+              <div className="flex items-center justify-between mt-4 p-3 rounded-lg bg-background border border-border">
+                <div className="flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4 text-warning" />
+                  <span className="text-sm text-foreground">Simulate Attack Mode</span>
+                </div>
+                <Switch
+                  checked={attackMode}
+                  onCheckedChange={setAttackMode}
+                />
+              </div>
+            )}
 
             {/* Submit Button */}
             <Button
