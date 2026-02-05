@@ -11,7 +11,7 @@ interface TopBarProps {
 export function TopBar({ 
   defenseMode, 
   onDefenseModeChange, 
-  modelName = 'GPT-4 Turbo' 
+  modelName = 'Gemma3:1b' 
 }: TopBarProps) {
   const isStrict = defenseMode === 'strict';
 
