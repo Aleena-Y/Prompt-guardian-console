@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { 
   Settings, 
   Shield, 
@@ -14,8 +14,9 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 import { Slider } from '@/components/ui/slider';
-import { mockSecuritySettings } from '@/data/mockData';
+import { attackPatterns } from '@/data/mockData';
 import type { SecuritySettings, ForbiddenPhrase, RiskLevel } from '@/types/dashboard';
+import securitySettingsService from '@/services/securitySettingsService';
 
 const categoryIcons = {
   detection: Eye,
@@ -29,9 +30,36 @@ const severityColors = {
 };
 
 export function SecurityPolicies() {
-  const [settings, setSettings] = useState<SecuritySettings>(mockSecuritySettings);
+  const defaultSettings = useMemo<SecuritySettings>(() => ({
+    policies: attackPatterns.map((pattern) => ({
+      id: pattern.id,
+      name: pattern.name,
+      description: pattern.description,
+      enabled: true,
+      category: 'detection',
+    })),
+    confidenceThreshold: 80,
+    forbiddenPhrases: [],
+  }), []);
+
+  const [settings, setSettings] = useState<SecuritySettings>(defaultSettings);
   const [newPhrase, setNewPhrase] = useState('');
   const [newSeverity, setNewSeverity] = useState<RiskLevel>('suspicious');
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const hasLoadedRef = useRef(false);
+
+  useEffect(() => {
+    const stored = securitySettingsService.load();
+    if (stored) {
+      setSettings(stored);
+    }
+    hasLoadedRef.current = true;
+  }, []);
+
+  useEffect(() => {
+    if (!hasLoadedRef.current) return;
+    securitySettingsService.save(settings);
+  }, [settings]);
 
   const togglePolicy = (policyId: string) => {
     setSettings(prev => ({
@@ -40,10 +68,12 @@ export function SecurityPolicies() {
         p.id === policyId ? { ...p, enabled: !p.enabled } : p
       )
     }));
+    setHasUnsavedChanges(true);
   };
 
   const updateThreshold = (value: number[]) => {
     setSettings(prev => ({ ...prev, confidenceThreshold: value[0] }));
+    setHasUnsavedChanges(true);
   };
 
   const addPhrase = () => {
@@ -61,6 +91,7 @@ export function SecurityPolicies() {
       forbiddenPhrases: [...prev.forbiddenPhrases, phrase]
     }));
     setNewPhrase('');
+    setHasUnsavedChanges(true);
   };
 
   const removePhrase = (phraseId: string) => {
@@ -68,6 +99,18 @@ export function SecurityPolicies() {
       ...prev,
       forbiddenPhrases: prev.forbiddenPhrases.filter(p => p.id !== phraseId)
     }));
+    setHasUnsavedChanges(true);
+  };
+
+  const handleSave = () => {
+    securitySettingsService.save(settings);
+    setHasUnsavedChanges(false);
+  };
+
+  const handleReset = () => {
+    securitySettingsService.clear();
+    setSettings(defaultSettings);
+    setHasUnsavedChanges(false);
   };
 
   return (
@@ -77,10 +120,23 @@ export function SecurityPolicies() {
           <h1 className="text-2xl font-semibold text-foreground mb-1">Security Policies</h1>
           <p className="text-muted-foreground">Configure detection rules and defense thresholds</p>
         </div>
-        <Button className="gap-2 bg-primary text-primary-foreground hover:bg-primary/90">
+        <div className="flex items-center gap-2">
+          <Button
+            onClick={handleReset}
+            variant="outline"
+            className="gap-2"
+          >
+            Reset
+          </Button>
+          <Button
+            onClick={handleSave}
+            className="gap-2 bg-primary text-primary-foreground hover:bg-primary/90"
+            disabled={!hasUnsavedChanges}
+          >
           <Save className="w-4 h-4" />
           Save Changes
-        </Button>
+          </Button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

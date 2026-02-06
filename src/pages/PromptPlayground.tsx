@@ -23,6 +23,7 @@ import type { AnalysisResult, RiskLevel } from '@/types/dashboard';
 import { simulateAnalysis } from '@/data/mockData';
 import { OllamaService } from '@/services/ollamaService';
 import indexedDBService from '@/services/indexedDBService';
+import securitySettingsService from '@/services/securitySettingsService';
 import { useToast } from '@/hooks/use-toast';
 
 const riskConfig = {
@@ -130,7 +131,12 @@ export function PromptPlayground() {
       } else {
         // Fallback to mock analysis
         await new Promise(resolve => setTimeout(resolve, 800));
-        result = simulateAnalysis(prompt, attackMode);
+        const settings = securitySettingsService.load();
+        const forbiddenPhrases = settings?.forbiddenPhrases.map(p => ({
+          phrase: p.phrase,
+          severity: p.severity === 'safe' ? 'suspicious' : p.severity
+        })) ?? [];
+        result = simulateAnalysis(prompt, attackMode, forbiddenPhrases);
         if (useOllama && !ollamaConnected) {
           toast({
             title: 'Using Mock Analysis',
@@ -168,7 +174,12 @@ export function PromptPlayground() {
       
       // Fallback to mock analysis on error
       await new Promise(resolve => setTimeout(resolve, 800));
-      const result = simulateAnalysis(prompt, attackMode);
+      const settings = securitySettingsService.load();
+      const forbiddenPhrases = settings?.forbiddenPhrases.map(p => ({
+        phrase: p.phrase,
+        severity: p.severity === 'safe' ? 'suspicious' : p.severity
+      })) ?? [];
+      const result = simulateAnalysis(prompt, attackMode, forbiddenPhrases);
       setAnalysis(result);
     } finally {
       setIsAnalyzing(false);

@@ -1,8 +1,9 @@
+import { useEffect, useMemo, useState } from 'react';
 import { 
   BarChart3, 
   Shield, 
   AlertTriangle, 
-  Clock, 
+  Clock,
   TrendingUp,
   Activity
 } from 'lucide-react';
@@ -21,7 +22,8 @@ import {
   Bar
 } from 'recharts';
 import { cn } from '@/lib/utils';
-import { mockMetrics } from '@/data/mockData';
+import indexedDBService, { type StoredPromptLog } from '@/services/indexedDBService';
+import { format, subDays } from 'date-fns';
 
 interface MetricCardProps {
   title: string;
@@ -74,6 +76,96 @@ function MetricCard({ title, value, subtitle, icon: Icon, trend, variant = 'defa
 const COLORS = ['hsl(0, 72%, 51%)', 'hsl(38, 92%, 50%)', 'hsl(160, 84%, 40%)', 'hsl(185, 100%, 50%)', 'hsl(220, 40%, 50%)'];
 
 export function MonitoringDashboard() {
+  const [logs, setLogs] = useState<StoredPromptLog[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const loadLogs = async () => {
+      try {
+        await indexedDBService.init();
+        const fetchedLogs = await indexedDBService.getPromptLogs();
+        setLogs(fetchedLogs);
+      } catch (error) {
+        console.error('Failed to load dashboard logs:', error);
+        setLogs([]);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadLogs();
+  }, []);
+
+  const metrics = useMemo(() => {
+    const totalPrompts = logs.length;
+    const blockedAttacks = logs.filter((log) => log.defenseAction === 'blocked').length;
+    const falsePositives = logs.filter(
+      (log) => log.defenseAction === 'blocked' && log.riskLevel === 'safe'
+    ).length;
+    const averageConfidence = totalPrompts
+      ? Math.round(logs.reduce((sum, log) => sum + log.confidence, 0) / totalPrompts)
+      : 0;
+
+    const last7Days = Array.from({ length: 7 }, (_, index) => subDays(new Date(), 6 - index));
+    const dailyBuckets = new Map(
+      last7Days.map((day) => [format(day, 'yyyy-MM-dd'), { count: 0, blocked: 0 }])
+    );
+
+    logs.forEach((log) => {
+      const dateKey = format(new Date(log.timestamp), 'yyyy-MM-dd');
+      const bucket = dailyBuckets.get(dateKey);
+      if (!bucket) return;
+      bucket.count += 1;
+      if (log.defenseAction === 'blocked') {
+        bucket.blocked += 1;
+      }
+    });
+
+    const promptsOverTime = Array.from(dailyBuckets.entries()).map(([date, data]) => ({
+      date,
+      count: data.count,
+      blocked: data.blocked,
+    }));
+
+    const patternCounts = new Map<string, number>();
+    logs.forEach((log) => {
+      if (log.detectedPatterns.length === 0) return;
+      log.detectedPatterns.forEach((pattern) => {
+        patternCounts.set(pattern, (patternCounts.get(pattern) ?? 0) + 1);
+      });
+    });
+
+    const attackTypeDistribution = patternCounts.size
+      ? Array.from(patternCounts.entries())
+          .sort((a, b) => b[1] - a[1])
+          .map(([type, count]) => ({ type, count }))
+      : [{ type: 'No detections', count: 0 }];
+
+    const histogramBins = [
+      { range: '0-50%', min: 0, max: 50 },
+      { range: '50-60%', min: 50, max: 60 },
+      { range: '60-70%', min: 60, max: 70 },
+      { range: '70-80%', min: 70, max: 80 },
+      { range: '80-90%', min: 80, max: 90 },
+      { range: '90-100%', min: 90, max: 101 },
+    ];
+
+    const confidenceHistogram = histogramBins.map((bin) => ({
+      range: bin.range,
+      count: logs.filter((log) => log.confidence >= bin.min && log.confidence < bin.max).length,
+    }));
+
+    return {
+      totalPrompts,
+      blockedAttacks,
+      falsePositives,
+      averageConfidence,
+      promptsOverTime,
+      attackTypeDistribution,
+      confidenceHistogram,
+    };
+  }, [logs]);
+
   return (
     <div className="h-full animate-fade-in">
       <div className="mb-6">
@@ -85,33 +177,38 @@ export function MonitoringDashboard() {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
         <MetricCard
           title="Total Prompts"
-          value={mockMetrics.totalPrompts.toLocaleString()}
-          subtitle="Last 30 days"
+          value={metrics.totalPrompts.toLocaleString()}
+          subtitle={loading ? 'Loading logs...' : 'From prompt logs'}
           icon={Activity}
-          trend={{ value: 12, label: 'vs last period' }}
         />
         <MetricCard
           title="Blocked Attacks"
-          value={mockMetrics.blockedAttacks}
-          subtitle={`${((mockMetrics.blockedAttacks / mockMetrics.totalPrompts) * 100).toFixed(1)}% of total`}
+          value={metrics.blockedAttacks}
+          subtitle={
+            metrics.totalPrompts
+              ? `${((metrics.blockedAttacks / metrics.totalPrompts) * 100).toFixed(1)}% of total`
+              : '0% of total'
+          }
           icon={Shield}
           variant="danger"
-          trend={{ value: -8, label: 'vs last period' }}
         />
         <MetricCard
           title="False Positives"
-          value={mockMetrics.falsePositives}
-          subtitle={`${((mockMetrics.falsePositives / mockMetrics.blockedAttacks) * 100).toFixed(1)}% of blocked`}
+          value={metrics.falsePositives}
+          subtitle={
+            metrics.blockedAttacks
+              ? `${((metrics.falsePositives / metrics.blockedAttacks) * 100).toFixed(1)}% of blocked`
+              : '0% of blocked'
+          }
           icon={AlertTriangle}
           variant="warning"
         />
         <MetricCard
-          title="Avg. Latency"
-          value={`${mockMetrics.averageLatency}ms`}
-          subtitle="Detection time"
+          title="Avg. Confidence"
+          value={metrics.averageConfidence ? `${metrics.averageConfidence}%` : '—'}
+          subtitle="Detection confidence"
           icon={Clock}
           variant="success"
-          trend={{ value: 5, label: 'vs last period' }}
         />
       </div>
 
@@ -125,7 +222,7 @@ export function MonitoringDashboard() {
           </h3>
           <div className="h-64">
             <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={mockMetrics.promptsOverTime}>
+              <AreaChart data={metrics.promptsOverTime}>
                 <defs>
                   <linearGradient id="colorCount" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="5%" stopColor="hsl(185, 100%, 50%)" stopOpacity={0.3}/>
@@ -183,7 +280,7 @@ export function MonitoringDashboard() {
             <ResponsiveContainer width="50%" height="100%">
               <PieChart>
                 <Pie
-                  data={mockMetrics.attackTypeDistribution}
+                  data={metrics.attackTypeDistribution}
                   cx="50%"
                   cy="50%"
                   innerRadius={50}
@@ -192,7 +289,7 @@ export function MonitoringDashboard() {
                   paddingAngle={5}
                   dataKey="count"
                 >
-                  {mockMetrics.attackTypeDistribution.map((_, index) => (
+                  {metrics.attackTypeDistribution.map((_, index) => (
                     <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                   ))}
                 </Pie>
@@ -207,7 +304,7 @@ export function MonitoringDashboard() {
               </PieChart>
             </ResponsiveContainer>
             <div className="flex-1 space-y-2">
-              {mockMetrics.attackTypeDistribution.map((item, index) => (
+              {metrics.attackTypeDistribution.map((item, index) => (
                 <div key={item.type} className="flex items-center gap-2">
                   <div 
                     className="w-3 h-3 rounded-full" 
@@ -230,7 +327,7 @@ export function MonitoringDashboard() {
         </h3>
         <div className="h-48">
           <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={mockMetrics.confidenceHistogram}>
+            <BarChart data={metrics.confidenceHistogram}>
               <CartesianGrid strokeDasharray="3 3" stroke="hsl(220, 25%, 20%)" />
               <XAxis dataKey="range" stroke="hsl(215, 20%, 55%)" fontSize={12} />
               <YAxis stroke="hsl(215, 20%, 55%)" fontSize={12} />

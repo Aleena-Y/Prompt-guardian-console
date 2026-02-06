@@ -262,7 +262,7 @@ export const mockSecuritySettings: SecuritySettings = {
 };
 
 // Simulate analysis function
-export function simulateAnalysis(prompt: string, attackMode: boolean): AnalysisResult {
+export function simulateAnalysis(prompt: string, attackMode: boolean, forbiddenPhrases?: Array<{ phrase: string; severity: 'suspicious' | 'malicious' }>): AnalysisResult {
   const lowerPrompt = prompt.toLowerCase();
   
   // Check for malicious patterns
@@ -289,6 +289,59 @@ export function simulateAnalysis(prompt: string, attackMode: boolean): AnalysisR
 
   if (attackMode) {
     return mockMaliciousAnalysis;
+  }
+
+  // Check for forbidden phrases from security settings
+  const detectedForbiddenPhrases: Array<{ text: string; reason: string; severity: 'suspicious' | 'malicious' }> = [];
+  let hasForbiddenMalicious = false;
+  
+  if (forbiddenPhrases && forbiddenPhrases.length > 0) {
+    forbiddenPhrases.forEach(({ phrase, severity }) => {
+      if (lowerPrompt.includes(phrase)) {
+        detectedForbiddenPhrases.push({
+          text: phrase,
+          reason: 'Forbidden phrase detected in security policy',
+          severity
+        });
+        if (severity === 'malicious') {
+          hasForbiddenMalicious = true;
+        }
+      }
+    });
+  }
+
+  // If forbidden malicious phrase is detected, block the prompt
+  if (hasForbiddenMalicious || detectedForbiddenPhrases.some(p => p.severity === 'malicious')) {
+    return {
+      riskLevel: 'malicious',
+      confidence: 98,
+      detectedPatterns: [attackPatterns[0]], // Instruction Override
+      suspiciousPhrases: detectedForbiddenPhrases.length > 0 ? detectedForbiddenPhrases : [{
+        text: 'forbidden phrase',
+        reason: 'Forbidden phrase detected in security policy',
+        severity: 'malicious'
+      }],
+      reasoning: 'Prompt contains forbidden phrase(s) that match security policy settings. The prompt has been blocked.',
+      defenseAction: 'blocked',
+      safeResponse: '⚠️ This prompt has been blocked due to forbidden phrases detected in the security policy.'
+    };
+  }
+
+  // If forbidden suspicious phrase is detected, sanitize the prompt
+  const forbiddenSuspicious = detectedForbiddenPhrases.filter(p => p.severity === 'suspicious');
+  if (forbiddenSuspicious.length > 0) {
+    return {
+      riskLevel: 'suspicious',
+      confidence: 85,
+      detectedPatterns: [attackPatterns[4]], // Prompt Leaking
+      suspiciousPhrases: detectedForbiddenPhrases,
+      reasoning: 'Prompt contains forbidden phrase(s) from security policy. The prompt will be sanitized.',
+      defenseAction: 'sanitized',
+      sanitizedPrompt: prompt.split(/\s+/).map(word => (
+        forbiddenSuspicious.some(p => word.toLowerCase().includes(p.text)) ? '[REDACTED]' : word
+      )).join(' '),
+      safeResponse: 'Your prompt has been sanitized to remove potentially problematic phrases.'
+    };
   }
 
   const hasMalicious = maliciousPatterns.some(p => lowerPrompt.includes(p));
