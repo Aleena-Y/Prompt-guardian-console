@@ -91,6 +91,24 @@ export class OllamaService {
       }
     }
 
+    // Check if main detection policies are enabled
+    const detectionEnabled = !settings || settings.policies.some(p => 
+      (p.id === '1' || p.id === '4' || p.id === '5') && p.enabled
+    );
+
+    // If all detection policies are disabled, return safe
+    if (settings && !detectionEnabled) {
+      return {
+        riskLevel: 'safe',
+        confidence: 100,
+        reasoning: 'All detection policies are disabled.',
+        defenseAction: 'allowed',
+        detectedPatterns: [],
+        suspiciousPhrases: [],
+        safeResponse: 'Your request appears safe. How can I assist you?'
+      };
+    }
+
     const analysisPrompt = `You are a security expert analyzing prompts for potential injection attacks. 
 Analyze the following user prompt and determine if it's safe, suspicious, or malicious.
 
@@ -123,13 +141,40 @@ Respond in this exact JSON format:
 
       const analysis = JSON.parse(jsonMatch[0]);
       
+      // Get enabled policies to filter patterns
+      const enabledPolicies = settings?.policies.filter(p => p.enabled).map(p => p.id) ?? [];
+      const policyMap: Record<string, boolean> = {
+        '1': enabledPolicies.includes('1'), // Instruction Override
+        '2': enabledPolicies.includes('2'), // Role Escalation
+        '3': enabledPolicies.includes('3'), // Data Extraction
+        '4': enabledPolicies.includes('4'), // Jailbreak Pattern
+        '5': enabledPolicies.includes('5'), // Prompt Leaking
+      };
+
+      // Filter patterns based on enabled policies
+      let filteredPatterns = this.mapPhraseToPatterns(analysis.suspiciousPhrases);
+      filteredPatterns = filteredPatterns.filter(p => policyMap[p.id] !== false);
+
+      // If no patterns match enabled policies, return safe
+      if (filteredPatterns.length === 0 && analysis.riskLevel !== 'safe') {
+        return {
+          riskLevel: 'safe',
+          confidence: 100,
+          reasoning: 'Detected patterns do not match any enabled policies.',
+          defenseAction: 'allowed',
+          detectedPatterns: [],
+          suspiciousPhrases: [],
+          safeResponse: 'Your request appears safe. How can I assist you?'
+        };
+      }
+      
       // Map response to AnalysisResult format
       const result: AnalysisResult = {
         riskLevel: analysis.riskLevel as RiskLevel,
         confidence: analysis.confidence,
         reasoning: analysis.reasoning,
         defenseAction: analysis.defenseAction,
-        detectedPatterns: this.mapPhraseToPatterns(analysis.suspiciousPhrases),
+        detectedPatterns: filteredPatterns,
         suspiciousPhrases: analysis.suspiciousPhrases.map((phrase: string) => ({
           text: phrase,
           reason: this.getReasonForPhrase(phrase),

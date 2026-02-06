@@ -262,7 +262,7 @@ export const mockSecuritySettings: SecuritySettings = {
 };
 
 // Simulate analysis function
-export function simulateAnalysis(prompt: string, attackMode: boolean, forbiddenPhrases?: Array<{ phrase: string; severity: 'suspicious' | 'malicious' }>): AnalysisResult {
+export function simulateAnalysis(prompt: string, attackMode: boolean, forbiddenPhrases?: Array<{ phrase: string; severity: 'suspicious' | 'malicious' }>, enabledPolicies?: string[]): AnalysisResult {
   const lowerPrompt = prompt.toLowerCase();
   
   // Check for malicious patterns
@@ -291,7 +291,7 @@ export function simulateAnalysis(prompt: string, attackMode: boolean, forbiddenP
     return mockMaliciousAnalysis;
   }
 
-  // Check for forbidden phrases from security settings
+  // Check for forbidden phrases from security settings (if enabled)
   const detectedForbiddenPhrases: Array<{ text: string; reason: string; severity: 'suspicious' | 'malicious' }> = [];
   let hasForbiddenMalicious = false;
   
@@ -344,12 +344,34 @@ export function simulateAnalysis(prompt: string, attackMode: boolean, forbiddenP
     };
   }
 
+  // Only check default patterns if policies are enabled
+  const policyMap: Record<string, boolean> = {
+    '1': enabledPolicies?.includes('1') ?? true, // Instruction Override
+    '2': enabledPolicies?.includes('2') ?? true, // Role Escalation
+    '3': enabledPolicies?.includes('3') ?? true, // Data Extraction
+    '4': enabledPolicies?.includes('4') ?? true, // Jailbreak Pattern
+    '5': enabledPolicies?.includes('5') ?? true, // Prompt Leaking
+  };
+
   const hasMalicious = maliciousPatterns.some(p => lowerPrompt.includes(p));
   const hasSuspicious = suspiciousPatterns.some(p => lowerPrompt.includes(p));
 
   if (hasMalicious) {
+    // Filter detected patterns based on enabled policies
+    const filteredPatterns = mockMaliciousAnalysis.detectedPatterns.filter(p => {
+      // Map pattern ID to policy ID (patterns use sequential IDs)
+      const policyId = p.id;
+      return policyMap[policyId] !== false;
+    });
+
+    // If no patterns are enabled, return safe
+    if (filteredPatterns.length === 0) {
+      return mockSafeAnalysis;
+    }
+
     return {
       ...mockMaliciousAnalysis,
+      detectedPatterns: filteredPatterns,
       suspiciousPhrases: maliciousPatterns
         .filter(p => lowerPrompt.includes(p))
         .map(text => ({
@@ -361,8 +383,20 @@ export function simulateAnalysis(prompt: string, attackMode: boolean, forbiddenP
   }
 
   if (hasSuspicious) {
+    // Filter detected patterns based on enabled policies
+    const filteredPatterns = mockSuspiciousAnalysis.detectedPatterns.filter(p => {
+      const policyId = p.id;
+      return policyMap[policyId] !== false;
+    });
+
+    // If no patterns are enabled, return safe
+    if (filteredPatterns.length === 0) {
+      return mockSafeAnalysis;
+    }
+
     return {
       ...mockSuspiciousAnalysis,
+      detectedPatterns: filteredPatterns,
       suspiciousPhrases: suspiciousPatterns
         .filter(p => lowerPrompt.includes(p))
         .map(text => ({

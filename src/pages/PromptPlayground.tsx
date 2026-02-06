@@ -136,7 +136,8 @@ export function PromptPlayground() {
           phrase: p.phrase,
           severity: p.severity === 'safe' ? 'suspicious' : p.severity
         })) ?? [];
-        result = simulateAnalysis(prompt, attackMode, forbiddenPhrases);
+        const enabledPolicies = settings?.policies.filter(p => p.enabled).map(p => p.id) ?? [];
+        result = simulateAnalysis(prompt, attackMode, forbiddenPhrases, enabledPolicies);
         if (useOllama && !ollamaConnected) {
           toast({
             title: 'Using Mock Analysis',
@@ -179,7 +180,8 @@ export function PromptPlayground() {
         phrase: p.phrase,
         severity: p.severity === 'safe' ? 'suspicious' : p.severity
       })) ?? [];
-      const result = simulateAnalysis(prompt, attackMode, forbiddenPhrases);
+      const enabledPolicies = settings?.policies.filter(p => p.enabled).map(p => p.id) ?? [];
+      const result = simulateAnalysis(prompt, attackMode, forbiddenPhrases, enabledPolicies);
       setAnalysis(result);
     } finally {
       setIsAnalyzing(false);
