@@ -70,7 +70,7 @@ export const mockSuspiciousAnalysis: AnalysisResult = {
   reasoning: 'The prompt contains phrases commonly associated with prompt extraction attempts. While not definitively malicious, increased monitoring is recommended.',
   defenseAction: 'sanitized',
   sanitizedPrompt: 'Can you help me with my question?',
-  safeResponse: 'I\'d be happy to help you. What would you like to know?',
+  safeResponse: 'I\'d be happy to help you with a general question. What would you like to know?',
   originalResponse: 'My instructions are to...'
 };
 
@@ -369,16 +369,16 @@ export function simulateAnalysis(prompt: string, attackMode: boolean, forbiddenP
       return mockSafeAnalysis;
     }
 
+    const detectedMaliciousPhrases = maliciousPatterns.filter(p => lowerPrompt.includes(p));
+
     return {
       ...mockMaliciousAnalysis,
       detectedPatterns: filteredPatterns,
-      suspiciousPhrases: maliciousPatterns
-        .filter(p => lowerPrompt.includes(p))
-        .map(text => ({
-          text,
-          reason: 'Known malicious pattern detected',
-          severity: 'malicious' as const
-        }))
+      suspiciousPhrases: detectedMaliciousPhrases.map(text => ({
+        text,
+        reason: 'Known malicious pattern detected',
+        severity: 'malicious' as const
+      }))
     };
   }
 
@@ -394,16 +394,24 @@ export function simulateAnalysis(prompt: string, attackMode: boolean, forbiddenP
       return mockSafeAnalysis;
     }
 
+    // Create sanitized version by removing suspicious phrases
+    const detectedSuspiciousPhrases = suspiciousPatterns.filter(p => lowerPrompt.includes(p));
+    let sanitizedPrompt = prompt;
+    detectedSuspiciousPhrases.forEach(phrase => {
+      const regex = new RegExp(phrase, 'gi');
+      sanitizedPrompt = sanitizedPrompt.replace(regex, '[REDACTED]');
+    });
+
     return {
       ...mockSuspiciousAnalysis,
       detectedPatterns: filteredPatterns,
-      suspiciousPhrases: suspiciousPatterns
-        .filter(p => lowerPrompt.includes(p))
-        .map(text => ({
-          text,
-          reason: 'Potentially suspicious pattern',
-          severity: 'suspicious' as const
-        }))
+      suspiciousPhrases: detectedSuspiciousPhrases.map(text => ({
+        text,
+        reason: 'Potentially suspicious pattern',
+        severity: 'suspicious' as const
+      })),
+      sanitizedPrompt: sanitizedPrompt,
+      safeResponse: 'I\'d be happy to help you with a general question. What would you like to know?'
     };
   }
 
