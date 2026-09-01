@@ -276,13 +276,8 @@ src/
 - `/monitoring` - Monitoring Dashboard
 - `/policies` - Security Policies
 
-## License
 
-[Your License Here]
 
-## Contributing
-
-[Contributing Guidelines]
 ## Scripts
 
 - `npm run dev` - Start development server
@@ -312,9 +307,6 @@ Contributions are welcome! Please follow these steps:
 4. Push to the branch (`git push origin feature/amazing-feature`)
 5. Open a Pull Request
 
-## License
-
-[Your License Here]
 
 ## Acknowledgments
 
@@ -322,7 +314,7 @@ Contributions are welcome! Please follow these steps:
 - UI components from [shadcn/ui](https://ui.shadcn.com/)
 - AI powered by [Ollama](https://ollama.com/)
 - Model: [Gemma 3 by Google](https://ollama.com/library/gemma2)
-- Edit files directly within the Codespace and commit and push your changes once you're done.
+
 
 ## What technologies are used for this project?
 
@@ -334,14 +326,3 @@ This project is built with:
 - shadcn-ui
 - Tailwind CSS
 
-## How can I deploy this project?
-
-Simply open [Lovable](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and click on Share -> Publish.
-
-## Can I connect a custom domain to my Lovable project?
-
-Yes, you can!
-
-To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
-
-Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/custom-domain#custom-domain)
